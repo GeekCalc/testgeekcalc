@@ -1,0 +1,2445 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1" name="viewport"/>
+<title>Hay Day – Production Planner &amp; Ingredient Calculator</title>
+<style>
+ :root { --bg:#0f172a; --panel:#111827; --muted:#94a3b8; --text:#e5e7eb; --accent:#0ea5e9; --danger:#fb7185; }
+ html, body { background: var(--bg); color: var(--text); font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial; margin: 0; }
+ h1 { font-size: clamp(1rem, 2vw + .8rem, 1.6rem); margin: .6rem .9rem .3rem; }
+ .container { max-width: 1100px; margin: 0 auto; padding: .9rem; }
+ .grid { display: grid; grid-template-columns: 1fr; gap: .5rem; }
+ @media (min-width: 960px) { .grid { grid-template-columns: 1fr 1fr; } }
+ .card { background: var(--panel); border: 1px solid #1f2937; border-radius: 10px; padding: .75rem; box-shadow: 0 6px 20px rgba(0,0,0,.25); }
+ label { display:block; margin-bottom:.25rem; color: var(--muted); font-weight:600; }
+ input[type=text], input[type=number] { width: 100%; padding: .45rem .55rem; border-radius: 8px; border: 1px solid #334155; background: var(--panel); color: var(--text); outline: none; }
+ .row { display:flex; gap:.35rem; align-items:end; flex-wrap: wrap; }
+ .row > div { flex:1; min-width: 160px; }
+ button { cursor: pointer; border: none; border-radius: 8px; padding: .45rem .65rem; font-weight: 600; }
+ .btn { background: var(--accent); color: #001018; }
+ .btn-small { padding: .35rem .5rem; font-size: .85rem; white-space: nowrap; }
+ .btn-danger { background: var(--danger); color: #2a0005; }
+ .btn-ghost { background: var(--accent); border: 1px solid var(--accent); color:#001018; }
+ .stack { display:flex; flex-direction: column; gap: .4rem; }
+ .switch { display:flex; align-items:center; gap:.35rem; margin-top:.1rem; }
+ table { width:100%; border-collapse: collapse; }
+ th, td { padding:.35rem .4rem; border-bottom: 1px solid #223046; }
+ th { text-align:left; color: var(--muted); font-weight:700; }
+ 
+ .qty-input { width: 44px; text-align:center; }
+ .muted { color: var(--muted); }
+ .tag { display:inline-block; padding:.1rem .5rem; border-radius: 999px; font-size:.75rem; background: var(--panel); border:1px solid #334155; color:var(--muted); }
+ /* tree view */
+ .tree { font-family: inherit; }
+ .tree ul { list-style: none; margin: .2rem 0 .2rem .75rem; padding-left: .75rem; border-left: 1px solid #223046; }
+ .tree li { margin: .15rem 0; }
+ .tree .node { display: inline-flex; align-items: center; gap: .4rem; }
+ .tree .qty { color: var(--muted); }
+ .tree .src { color: var(--muted); font-size: .85em; }
+ .tree .twisty { cursor: pointer; user-select: none; color: var(--muted); }
+ .tree .collapsed > ul { display: none; }
+ footer { margin-top:.8rem; color:var(--muted); text-align:center; font-size:.9rem; }
+/* Align Remove button to the far right of the actions column */
+#listBody td:last-child { text-align: right; white-space: nowrap; }
+#listBody .btn-small { padding: .35rem .5rem; font-size: .85rem; white-space: nowrap; }
+ .btn-danger { margin-left: .5rem; }
+/* copy helpers */
+.copy-bar { display:flex; align-items:center; justify-content:flex-end; gap:.5rem; margin:-.2rem 0 .3rem; }
+.copy-msg { color: var(--muted); font-size:.85em; min-width: 140px; text-align:left; }
+.toast { position: fixed; top: 12px; right: 12px; background: var(--panel); color:var(--text); border:1px solid #334155; padding:.45rem .65rem; border-radius:8px; box-shadow:0 6px 20px rgba(0,0,0,.35); z-index: 1000; opacity:.98; }
+.h3-row { display:flex; align-items:center; justify-content:space-between; margin:.1rem 0 .4rem; }
+/* live search list */
+.results-wrap{position:relative}
+.live-results { position: absolute; left: 0; right: 0; background: var(--panel); border: 1px solid #334155; border-radius: 8px; max-height: 260px; overflow-y: auto; padding: 0; margin-top: 4px; list-style: none; box-shadow:0 8px 24px rgba(0,0,0,.35); z-index: 100; }
+.live-results.hidden { display: none; }
+.live-results li { display:flex; justify-content:space-between; gap:.75rem; padding:.45rem .6rem; cursor:pointer; border-bottom:1px solid #1f2937; }
+.live-results li:hover { background: var(--panel); }
+.live-results .left { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.live-results .right { color: var(--muted); }
+.live-results .match { font-weight:700; color:#facc15; }
+
+
+/* Always show number steppers for quantity inputs */
+input[type=number] { 
+  appearance: number-input; 
+  -moz-appearance: number-input; 
+  -webkit-appearance: number-input; 
+}
+/* WebKit browsers: force the inner spin buttons to be visible */
+input[type=number]::-webkit-outer-spin-button,
+input[type=number]::-webkit-inner-spin-button { 
+  -webkit-appearance: inner-spin-button; 
+  margin: 0; 
+  opacity: 1; 
+}
+/* Slightly wider qty box to keep arrows usable */
+.qty-input { width: 60px; }
+
+
+/* --- Search width fix --- */
+.results-wrap { width: 100% !important; max-width: 100% !important; box-sizing: border-box; }
+#search { width: 100% !important; max-width: 100% !important; box-sizing: border-box; }
+/* Ensure the absolute-positioned results list doesn't overflow the card */
+.results-wrap .live-results { left: 0; right: 0; max-width: 100%; }
+
+/* === Theme modes === */
+:root {
+  /* existing vars already define dark; keep as defaults */
+}
+:root[data-theme="dark"]{
+  --bg:#0f172a; --panel:#111827; --muted:#94a3b8; --text:#e5e7eb; --accent:#0ea5e9; --danger:#fb7185;
+}
+:root[data-theme="lightPink"]{
+  /* bright farm-like colors */
+  --bg:#f5f1e8;           /* warm paper */
+  --panel:#ffffff;        /* clean card */
+  --text:#1f2937;         /* slate-800 */
+  --muted:#6b7280;        /* gray-500 */
+  --accent:#22c55e;       /* green */
+  --danger:#ef4444;       /* red */
+}
+:root[data-theme="rosa"]{
+  --bg:#FDEEF1;
+  --panel:#FFF9F4;
+  --text:#2E0018;
+  --muted:#C6B7CC;
+  --accent:#F7D9E0;
+  --danger:#F7D9E0;
+}
+/* adjust default body to read from CSS vars always */
+html, body { background: var(--bg); color: var(--text); }
+.card{ background: var(--panel); }
+.btn-ghost{ background: var(--accent); border:1px solid var(--accent); color:#001018; }
+.btn{ background: var(--accent); color:#001018; }
+
+/* Icons in the Live Search */
+.live-results img {
+  display: block;
+  background: #1f2937; /* fallback bg */
+}
+
+
+/* Match Production list heading style for the Search label */
+label[for="search"]{
+  color: var(--text) !important;
+  font-weight: 700;
+}
+
+/* === Custom quantity control (+ / - / ±5) === */
+.qty-wrap{display:inline-flex;align-items:center;gap:.25rem}
+.qty-wrap .qty-btn{background:transparent;color:var(--text);border:1px solid #334155;min-width:28px;height:28px;border-radius:6px;font-weight:800;line-height:1;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
+.qty-wrap .qty-btn:hover{background:transparent}
+.qty-wrap .qty-btn.step5{min-width:36px}
+.qty-wrap .qty-input{width:64px;text-align:center;height:28px}
+/* hide native spin buttons (we provide + / -) */
+input[type=number]::-webkit-outer-spin-button,
+input[type=number]::-webkit-inner-spin-button{ -webkit-appearance: none; margin:0}
+input[type=number]{ -moz-appearance: textfield }
+
+
+/* --- Icon sizing & alignment (28px) --- */
+td { vertical-align: middle; }
+#needsBody td:first-child, #listBody td:first-child { display: flex; align-items: center; }
+.table-icon, .tree .node img, #needsBody td img, #listBody td img {
+  width: 28px; height: 28px; max-width:28px; max-height:28px; object-fit: contain; border-radius:6px; margin-right:6px;
+}
+.tree .node { align-items: center; }
+
+</style>
+</head>
+<body><div id="themeBox" style="position:fixed;top:10px;right:10px;z-index:999;background:var(--panel);padding:8px 12px;border-radius:8px;border:1px solid #334155;box-shadow:0 4px 12px rgba(0,0,0,.3);"><select id="themeSelect" style="min-width:140px;padding:.3rem .5rem;border-radius:6px;border:1px solid #334155;background:var(--panel);color:var(--text);"><option value="dark">Dark</option><option value="lightPink">Light</option><option value="rosa">Rosa</option></select></div>
+<h1>Hay Day – Production Planner &amp; Ingredient Calculator</h1>
+<div class="container">
+<p class="muted">Pick products, add quantities to the production list and instantly see which ingredients are needed in total. Optionally break sub‑products down into base ingredients. Export as .json and share with friends or import again to continue your plan.</p>
+<div class="grid">
+
+<section class="card stack">
+<div class="row">
+<div class="results-wrap" style="width:100%">
+<label for="search">Search</label>
+<input aria-label="Search products" id="search" placeholder="Search products…" type="text"/>
+<ul class="live-results hidden" id="liveResults"></ul>
+</div>
+</div>
+
+
+</section>
+<section class="card">
+<div class="h3-row"><h3 style="margin:0">Production list</h3><div style="display:flex;align-items:center;gap:.5rem;"> <button class='btn-ghost' id='newPlanBtn'>New plan</button> <button class='btn-ghost' id='copyLinkBtn'>Copy link</button></div></div>
+
+<div class="row" style="margin-bottom:.5rem;">
+  <div>
+    <label for="setAllQty">Set all quantities</label>
+    <div class="qty-wrap"><button type="button" class="qty-btn step5" id="setAllMinus5" aria-label="decrease by 5">−5</button><button type="button" class="qty-btn" id="setAllMinus" aria-label="decrease">−</button><input type="number" id="setAllQty" min="1" value="1" class="qty-input" /><button type="button" class="qty-btn" id="setAllPlus" aria-label="increase">+</button><button type="button" class="qty-btn step5" id="setAllPlus5" aria-label="increase by 5">+5</button></div>
+  </div>
+  <div style="display:flex;align-items:flex-end;margin-left:auto;margin-right:0;padding-left:16px;">
+    <button class="btn" class="btn btn-small" id="applyAllQtyBtn">Apply</button>
+  </div>
+</div>
+<table>
+<thead>
+<tr><th>Product</th><th style="width:120px">Qty</th><th style="width:120px"></th></tr>
+</thead>
+<tbody id="listBody"></tbody>
+</table>
+</section>
+</div>
+<section class="card" style="margin-top:.5rem">
+<div class="h3-row"><h3 style="margin:0">Required ingredients (total)</h3><div class="switch"><input id="recursive" type="checkbox"/><label for="recursive">Break sub-products down (recursive)</label></div><div class="copy-bar" style="margin:0"><button class="btn" id="copyTotalsBtn" type="button">Copy totals</button> <button class="btn-ghost" id="downloadTotalsPngBtn" type="button">PNG</button> <span aria-live="polite" class="copy-msg" id="copyTotalsMsg"></span></div></div>
+<div><span class="tag" id="modeTag">Direct ingredients</span></div>
+<table style="margin-top:.3rem">
+<thead>
+<tr><th>Ingredient</th><th style="width:120px">Qty</th></tr>
+</thead>
+<tbody id="needsBody"></tbody>
+</table>
+</section>
+<section class="card" style="margin-top:.5rem">
+<div class="h3-row"><h3 style="margin:0">Breakdown (tree)</h3><div class="copy-bar" style="margin:0"><button class="btn" id="copyTreeBtn" type="button">Copy tree</button> <button class="btn-ghost" id="downloadTreePngBtn" type="button">PNG</button> <span aria-live="polite" class="copy-msg" id="copyTreeMsg"></span></div></div>
+<div class="tree" id="treeView"></div>
+
+</section>
+<footer>Made by Geek. For Geeks.</footer>
+</div>
+<script id="goods-data" type="application/json">[
+ {
+  "name": "Bread",
+  "needs": "Wheat (3)",
+  "source": "Bakery"
+ },
+ {
+  "name": "Chicken feed",
+  "needs": "Corn (1)\nWheat (2)",
+  "source": "Feed Mill"
+ },
+ {
+  "name": "Cow feed",
+  "needs": "Corn (1)\nSoybean (2)",
+  "source": "Feed Mill"
+ },
+ {
+  "name": "Cream",
+  "needs": "Milk (1)",
+  "source": "Dairy"
+ },
+ {
+  "name": "Corn bread",
+  "needs": "Corn (2)\nEgg (2)",
+  "source": "Bakery"
+ },
+ {
+  "name": "Brown sugar",
+  "needs": "Sugarcane (1)",
+  "source": "Sugar Mill"
+ },
+ {
+  "name": "Popcorn",
+  "needs": "Corn (2)",
+  "source": "Popcorn Pot"
+ },
+ {
+  "name": "Butter",
+  "needs": "Milk (2)",
+  "source": "Dairy"
+ },
+ {
+  "name": "Pancake",
+  "needs": "Brown sugar (1)\nEgg (3)",
+  "source": "BBQ Grill"
+ },
+ {
+  "name": "Pig feed",
+  "needs": "Carrot (2)\nSoybean (1)",
+  "source": "Feed Mill"
+ },
+ {
+  "name": "Cookie",
+  "needs": "Brown sugar (1)\nEgg (2)Wheat (2)",
+  "source": "Bakery"
+ },
+ {
+  "name": "Bacon and eggs",
+  "needs": "Bacon (2)\nEgg (4)",
+  "source": "BBQ Grill"
+ },
+ {
+  "name": "Cheese",
+  "needs": "Milk (3)",
+  "source": "Dairy"
+ },
+ {
+  "name": "White sugar",
+  "needs": "Sugarcane (2)",
+  "source": "Sugar Mill"
+ },
+ {
+  "name": "Carrot pie",
+  "needs": "Carrot (3)Egg (1)Wheat (2)",
+  "source": "Pie Oven"
+ },
+ {
+  "name": "Pumpkin pie",
+  "needs": "Egg (1)\nPumpkin (3)Wheat (2)",
+  "source": "Pie Oven"
+ },
+ {
+  "name": "Sheep feed",
+  "needs": "Soybean (1)\nWheat (3)",
+  "source": "Feed Mill"
+ },
+ {
+  "name": "Buttered popcorn",
+  "needs": "Butter (1)\nCorn (2)",
+  "source": "Popcorn Pot"
+ },
+ {
+  "name": "Sweater",
+  "needs": "Wool (2)",
+  "source": "Loom"
+ },
+ {
+  "name": "Bacon pie",
+  "needs": "Bacon (3)\nEgg (1)Wheat (2)",
+  "source": "Pie Oven"
+ },
+ {
+  "name": "Syrup",
+  "needs": "Sugarcane (4)",
+  "source": "Sugar Mill"
+ },
+ {
+  "name": "Cotton fabric",
+  "needs": "Cotton (3)",
+  "source": "Loom"
+ },
+ {
+  "name": "Hamburger",
+  "needs": "Bacon (2)\nBread (2)",
+  "source": "BBQ Grill"
+ },
+ {
+  "name": "Raspberry muffin",
+  "needs": "Egg (1)\nRaspberry (2)Wheat (2)",
+  "source": "Bakery"
+ },
+ {
+  "name": "Blue woolly hat",
+  "needs": "Indigo (1)\nWool (1)",
+  "source": "Loom"
+ },
+ {
+  "name": "Cotton shirt",
+  "needs": "Cotton fabric (2)",
+  "source": "Sewing Machine"
+ },
+ {
+  "name": "Blue sweater",
+  "needs": "Indigo (2)\nWool (2)",
+  "source": "Loom"
+ },
+ {
+  "name": "Carrot cake",
+  "needs": "Brown sugar (1)\nButter (1)Carrot (2)",
+  "source": "Cake Oven"
+ },
+ {
+  "name": "Wooly chaps",
+  "needs": "Cotton fabric (1)\nWool (3)",
+  "source": "Sewing Machine"
+ },
+ {
+  "name": "Cream cake",
+  "needs": "Cream (1)\nWhite sugar (1)Wheat (5)",
+  "source": "Cake Oven"
+ },
+ {
+  "name": "Red berry cake",
+  "needs": "Cherry (2)\nEgg (1)Milk (1)Raspberry (1)",
+  "source": "Cake Oven"
+ },
+ {
+  "name": "Cheesecake",
+  "needs": "Cheese (1)Cookie (1)",
+  "source": "Cake Oven"
+ },
+ {
+  "name": "Silver bar",
+  "needs": "Silver ore (3)",
+  "source": "Smelter"
+ },
+ {
+  "name": "Chili popcorn",
+  "needs": "Chili pepper (2)\nCorn (2)",
+  "source": "Popcorn Pot"
+ },
+ {
+  "name": "Gold bar",
+  "needs": "Gold ore (3)",
+  "source": "Smelter"
+ },
+ {
+  "name": "Platinum bar",
+  "needs": "Platinum ore (3)",
+  "source": "Smelter"
+ },
+ {
+  "name": "Violet dress",
+  "needs": "Cotton fabric (2)\nIndigo (1)Raspberry (1)",
+  "source": "Sewing Machine"
+ },
+ {
+  "name": "Blackberry muffin",
+  "needs": "Blackberry (2)\nEgg (2)Wheat (1)",
+  "source": "Bakery"
+ },
+ {
+  "name": "Carrot juice",
+  "needs": "Carrot (3)",
+  "source": "Juice Press"
+ },
+ {
+  "name": "Fish burger",
+  "needs": "Bread (2)Chili pepper (1)Fish fillet (2)",
+  "source": "BBQ Grill"
+ },
+ {
+  "name": "Apple pie",
+  "needs": "Apple (3)\nEgg (1)Syrup (1)Wheat (2)",
+  "source": "Pie Oven"
+ },
+ {
+  "name": "Fish pie",
+  "needs": "Egg (1)Fish fillet (3)Wheat (2)",
+  "source": "Pie Oven"
+ },
+ {
+  "name": "Apple juice",
+  "needs": "Apple (2)",
+  "source": "Juice Press"
+ },
+ {
+  "name": "Vanilla ice cream",
+  "needs": "Cream (1)Milk (1)White sugar (1)",
+  "source": "Ice Cream Maker"
+ },
+ {
+  "name": "Roasted tomatoes",
+  "needs": "Tomato (2)",
+  "source": "BBQ Grill"
+ },
+ {
+  "name": "Cherry juice",
+  "needs": "Cherry (2)",
+  "source": "Juice Press"
+ },
+ {
+  "name": "Tomato juice",
+  "needs": "Tomato (3)",
+  "source": "Juice Press"
+ },
+ {
+  "name": "Berry juice",
+  "needs": "Blackberry (1)\nRaspberry (1)",
+  "source": "Juice Press"
+ },
+ {
+  "name": "Blueberry Cheesecake",
+  "needs": "Cheesecake (1)\nBlueberries (2)",
+  "source": "Cake Oven"
+ },
+ {
+  "name": "Goat feed",
+  "needs": "Carrot (2)\nCorn (1)Wheat (1)",
+  "source": "Feed Mill"
+ },
+ {
+  "name": "Goat cheese",
+  "needs": "Goat milk (2)",
+  "source": "Dairy"
+ },
+ {
+  "name": "Pizza",
+  "needs": "Cheese (1)\nTomato (1)Wheat (2)",
+  "source": "Bakery"
+ },
+ {
+  "name": "Refined coal",
+  "needs": "Coal (3)",
+  "source": "Smelter"
+ },
+ {
+  "name": "Cherry popsicle",
+  "needs": "Cherry juice (1)\nSyrup (1)",
+  "source": "Ice Cream Maker"
+ },
+ {
+  "name": "Blueberry Muffin",
+  "needs": "Wheat (1)\nEggs (2)\nBlueberries (2)",
+  "source": "Bakery"
+ },
+ {
+  "name": "Feta pie",
+  "needs": "Egg (1)\nGoat cheese (1)Wheat (2)",
+  "source": "Pie Oven"
+ },
+ {
+  "name": "Iron bar",
+  "needs": "Iron ore (3)",
+  "source": "Smelter"
+ },
+ {
+  "name": "Strawberry ice cream",
+  "needs": "Cream (1)\nMilk (1)Strawberry (3)White sugar (1)",
+  "source": "Ice Cream Maker"
+ },
+ {
+  "name": "Wheat bundle",
+  "needs": "Wheat (75)",
+  "source": "Feed Mill"
+ },
+ {
+  "name": "Meat bucket",
+  "needs": "Fish fillet (3)\nCarrot (5)",
+  "source": "Feed Mill"
+ },
+ {
+  "name": "Strawberry cake",
+  "needs": "Cream (1)\nStrawberry (2)Wheat (3)White sugar (1)",
+  "source": "Cake Oven"
+ },
+ {
+  "name": "Baked potato",
+  "needs": "Cheese (1)\nChili pepper (1)Cream (1)Potato (2)",
+  "source": "BBQ Grill"
+ },
+ {
+  "name": "Apple jam",
+  "needs": "Apple (3)",
+  "source": "Jam Maker"
+ },
+ {
+  "name": "Chocolate cake",
+  "needs": "Brown sugar (1)\nButter (1)Cacao (2)",
+  "source": "Cake Oven"
+ },
+ {
+  "name": "Casserole",
+  "needs": "Bacon (2)\nCheese (1)Egg (2)Potato (2)",
+  "source": "Pie Oven"
+ },
+ {
+  "name": "Raspberry jam",
+  "needs": "Raspberry (3)",
+  "source": "Jam Maker"
+ },
+ {
+  "name": "Spicy pizza",
+  "needs": "Cheese (1)\nChili pepper (1)Tomato (1)Wheat (2)",
+  "source": "Bakery"
+ },
+ {
+  "name": "Blackberry jam",
+  "needs": "Blackberry (3)",
+  "source": "Jam Maker"
+ },
+ {
+  "name": "Potato feta cake",
+  "needs": "Egg (4)\nGoat cheese (1)Potato (1)",
+  "source": "Cake Oven"
+ },
+ {
+  "name": "Cherry jam",
+  "needs": "Cherry (3)",
+  "source": "Jam Maker"
+ },
+ {
+  "name": "Bracelet",
+  "needs": "Gold bar (1)\nSilver bar (2)",
+  "source": "Jeweler"
+ },
+ {
+  "name": "Potato bread",
+  "needs": "Butter (1)\nEgg (3)Potato (2)White sugar (1)",
+  "source": "Bakery"
+ },
+ {
+  "name": "Shepherd's pie",
+  "needs": "Bacon (2)\nCarrot (2)Potato (2)Pumpkin (2)",
+  "source": "Pie Oven"
+ },
+ {
+  "name": "Chocolate ice cream",
+  "needs": "Cream (1)\nCacao (2)Milk (1)White sugar (1)",
+  "source": "Ice Cream Maker"
+ },
+ {
+  "name": "Necklace",
+  "needs": "Gold bar (1)\nPlatinum bar (1)Silver bar (2)",
+  "source": "Jeweler"
+ },
+ {
+  "name": "Honey",
+  "needs": "Honeycomb (2)",
+  "source": "Honey Extractor"
+ },
+ {
+  "name": "Honey popcorn",
+  "needs": "Corn (2)\nHoney (2)",
+  "source": "Popcorn Pot"
+ },
+ {
+  "name": "Diamond ring",
+  "needs": "Diamond (1)\nGold bar (2)Platinum bar (2)",
+  "source": "Jeweler"
+ },
+ {
+  "name": "Fish and chips",
+  "needs": "Fish fillet (2)\nPotato (3)",
+  "source": "BBQ Grill"
+ },
+ {
+  "name": "Iron bracelet",
+  "needs": "Iron bar (2)\nRefined coal (2)Silver bar (1)",
+  "source": "Jeweler"
+ },
+ {
+  "name": "Espresso",
+  "needs": "Coffee bean (3)\nWhite sugar (1)",
+  "source": "Coffee Kiosk"
+ },
+ {
+  "name": "Honey apple cake",
+  "needs": "Apple (2)\nEgg (2)Honey (2)Wheat (2)",
+  "source": "Cake Oven"
+ },
+ {
+  "name": "Caffè latte",
+  "needs": "Coffee bean (2)\nMilk (1)White sugar (1)",
+  "source": "Coffee Kiosk"
+ },
+ {
+  "name": "Chocolate popcorn",
+  "needs": "Cacao (2)\nCorn (2)",
+  "source": "Popcorn Pot"
+ },
+ {
+  "name": "Frutti di Mare pizza",
+  "needs": "Cheese (1)\nFish fillet (1)Lobster tail (1)Wheat (2)",
+  "source": "Bakery"
+ },
+ {
+  "name": "Caffè mocha",
+  "needs": "Coffee bean (1)\nCream (1)Cacao (2)",
+  "source": "Coffee Kiosk"
+ },
+ {
+  "name": "Soothing pad",
+  "needs": "Cotton fabric (2)\nWheat (5)Chamomile (5)",
+  "source": "Sewing Machine"
+ },
+ {
+  "name": "Raspberry mocha",
+  "needs": "Cacao (1)\nCoffee bean (1)Cream (1)Raspberry (1)",
+  "source": "Coffee Kiosk"
+ },
+ {
+  "name": "Lobster soup",
+  "needs": "Chili pepper (2)\nCream (1)Lobster tail (2)Tomato (1)",
+  "source": "Soup Kitchen"
+ },
+ {
+  "name": "Hot chocolate",
+  "needs": "Cacao (2)\nCream (1)Milk (1)White sugar (1)",
+  "source": "Coffee Kiosk"
+ },
+ {
+  "name": "Tomato soup",
+  "needs": "Chili pepper (1)\nGoat cheese (1)Tomato juice (1)Tomato (2)",
+  "source": "Soup Kitchen"
+ },
+ {
+  "name": "Red scarf",
+  "needs": "Strawberry (2)\nWool (2)",
+  "source": "Loom"
+ },
+ {
+  "name": "Lobster skewer",
+  "needs": "Chili pepper (1)\nHoney (1)Lobster tail (1)",
+  "source": "BBQ Grill"
+ },
+ {
+  "name": "Beeswax",
+  "needs": "Honeycomb (3)",
+  "source": "Honey Extractor"
+ },
+ {
+  "name": "Strawberry candle",
+  "needs": "Beeswax (1)\nStrawberry (2)",
+  "source": "Candle Maker"
+ },
+ {
+  "name": "Rustic bouquet",
+  "needs": "Wheat (5)\nIndigo (3)Cotton (3)",
+  "source": "Flower Shop"
+ },
+ {
+  "name": "Pumpkin soup",
+  "needs": "Butter (1)\nCarrot (2)Honey (1)Pumpkin (3)",
+  "source": "Soup Kitchen"
+ },
+ {
+  "name": "Asparagus quiche",
+  "needs": "Asparagus (2)\nEgg (2)Cheese (1)Wheat (4)",
+  "source": "Pie Oven"
+ },
+ {
+  "name": "Strawberry jam",
+  "needs": "Strawberry (3)",
+  "source": "Jam Maker"
+ },
+ {
+  "name": "Sesame ice cream",
+  "needs": "Cream (1)Sesame (3)Brown sugar (1)",
+  "source": "Ice Cream Maker"
+ },
+ {
+  "name": "Caramel apple",
+  "needs": "Apple (1)\nSyrup (2)",
+  "source": "Candy Machine"
+ },
+ {
+  "name": "Pillow",
+  "needs": "Cotton fabric (2)\nDuck feather (3)",
+  "source": "Sewing Machine"
+ },
+ {
+  "name": "Asparagus soup",
+  "needs": "Asparagus (3)\nCream (2)",
+  "source": "Soup Kitchen"
+ },
+ {
+  "name": "Toffee",
+  "needs": "Butter (1)\nWheat (1)White sugar (1)",
+  "source": "Candy Machine"
+ },
+ {
+  "name": "Raspberry candle",
+  "needs": "Beeswax (1)\nRaspberry (2)",
+  "source": "Candle Maker"
+ },
+ {
+  "name": "Pineapple juice",
+  "needs": "Pineapple (3)",
+  "source": "Juice Press"
+ },
+ {
+  "name": "Fish soup",
+  "needs": "Carrot (1)\nFish fillet (2)Milk (1)Potato (3)",
+  "source": "Soup Kitchen"
+ },
+ {
+  "name": "Soy sauce",
+  "needs": "Soybean (9)\nWheat (1)",
+  "source": "Sauce Maker"
+ },
+ {
+  "name": "Chocolate",
+  "needs": "Cacao (3)\nCream (1)White sugar (1)",
+  "source": "Candy Machine"
+ },
+ {
+  "name": "Fancy cake",
+  "needs": "Cream cake (1)\nLily (3)Raspberry (3)Gold ore (1)",
+  "source": "Cake Oven"
+ },
+ {
+  "name": "Sushi roll",
+  "needs": "Fish fillet (1)\nRice (15)Soy sauce (1)",
+  "source": "Sushi Bar"
+ },
+ {
+  "name": "Lollipop",
+  "needs": "Cherry (1)\nStrawberry (2)Syrup (1)",
+  "source": "Candy Machine"
+ },
+ {
+  "name": "Feta salad",
+  "needs": "Goat cheese (2)\nLettuce (3)Olive (2)Roasted tomatoes (1)",
+  "source": "Salad Bar"
+ },
+ {
+  "name": "Lobster sushi",
+  "needs": "Lobster tail (1)\nRice (15)Soy sauce (1)",
+  "source": "Sushi Bar"
+ },
+ {
+  "name": "Blanket",
+  "needs": "Cotton fabric (3)\nDuck feather (5)Pumpkin (1)",
+  "source": "Sewing Machine"
+ },
+ {
+  "name": "Jelly beans",
+  "needs": "Blackberry jam (1)\nRaspberry jam (1)White sugar (1)",
+  "source": "Candy Machine"
+ },
+ {
+  "name": "Olive oil",
+  "needs": "Olive (3)",
+  "source": "Sauce Maker"
+ },
+ {
+  "name": "Garlic bread",
+  "needs": "Bread (2)\nButter (1)Garlic (4)",
+  "source": "BBQ Grill"
+ },
+ {
+  "name": "Veggie bagel",
+  "needs": "Bread (2)\nLettuce (3)Olive oil (1)Tomato (2)",
+  "source": "Sandwich Bar"
+ },
+ {
+  "name": "Mayonnaise",
+  "needs": "Egg (4)\nOlive oil (1)",
+  "source": "Sauce Maker"
+ },
+ {
+  "name": "BLT salad",
+  "needs": "Bacon (2)\nLettuce (3)Mayonnaise (1)Roasted tomatoes (1)",
+  "source": "Salad Bar"
+ },
+ {
+  "name": "Caramel latte",
+  "needs": "Coffee bean (2)\nToffee (1)Milk (1)",
+  "source": "Coffee Kiosk"
+ },
+ {
+  "name": "Egg sushi",
+  "needs": "Brown sugar (1)\nEgg (4)Rice (15)Soy sauce (1)",
+  "source": "Sushi Bar"
+ },
+ {
+  "name": "Honey peanuts",
+  "needs": "Honey (1)\nPeanuts (1)",
+  "source": "Candy Machine"
+ },
+ {
+  "name": "Seafood salad",
+  "needs": "Fish fillet (1)\nLettuce (3)Lobster tail (1)Mayonnaise (1)",
+  "source": "Salad Bar"
+ },
+ {
+  "name": "Berry smoothie",
+  "needs": "Blackberry (3)\nStrawberry (3)Raspberry (3)",
+  "source": "Smoothie Mixer"
+ },
+ {
+  "name": "Snack mix",
+  "needs": "Corn (2)\nSesame (1)Peanuts (1)",
+  "source": "Popcorn Pot"
+ },
+ {
+  "name": "Bright bouquet",
+  "needs": "Sunflower (5)\nIndigo (3)Cotton (1)Iron ore (5)",
+  "source": "Flower Shop"
+ },
+ {
+  "name": "Bacon toast",
+  "needs": "Bacon (2)\nBread (2)Lettuce (3)Mayonnaise (1)",
+  "source": "Sandwich Bar"
+ },
+ {
+  "name": "Pineapple cake",
+  "needs": "Pineapple (3)\nEgg (2)Cherry (2)Wheat (4)",
+  "source": "Cake Oven"
+ },
+ {
+  "name": "Chocolate pie",
+  "needs": "Wheat (3)\nCacao (3)Egg (1)Peanuts (1)",
+  "source": "Pie Oven"
+ },
+ {
+  "name": "Cabbage soup",
+  "needs": "Cabbage (3)\nBacon (2)Potato (2)Carrot (2)",
+  "source": "Soup Kitchen"
+ },
+ {
+  "name": "Lemon curd",
+  "needs": "Butter (1)\nEgg (2)Lemon (2)White sugar (1)",
+  "source": "Sauce Maker"
+ },
+ {
+  "name": "Olive dip",
+  "needs": "Olive (3)\nBread (2)Lemon (1)Fish fillet (1)",
+  "source": "Sauce Maker"
+ },
+ {
+  "name": "Egg sandwich",
+  "needs": "Bread (2)\nEgg (2)Lettuce (3)Mayonnaise (1)",
+  "source": "Sandwich Bar"
+ },
+ {
+  "name": "Green smoothie",
+  "needs": "Apple (1)\nLemon (1)Lettuce (5)",
+  "source": "Smoothie Mixer"
+ },
+ {
+  "name": "Fresh pasta",
+  "needs": "Egg (1)\nWheat (2)",
+  "source": "Pasta Maker"
+ },
+ {
+  "name": "Pasta salad",
+  "needs": "Fresh pasta (4)Lemon (2)Olive oil (1)Tomato (2)",
+  "source": "Salad Bar"
+ },
+ {
+  "name": "Lemon pie",
+  "needs": "Egg (1)\nLemon curd (1)Wheat (2)",
+  "source": "Pie Oven"
+ },
+ {
+  "name": "Grilled asparagus",
+  "needs": "Asparagus (5)\nBacon (3)Lemon (1)",
+  "source": "BBQ Grill"
+ },
+ {
+  "name": "Grilled onion",
+  "needs": "Butter (1)\nOnion (2)",
+  "source": "BBQ Grill"
+ },
+ {
+  "name": "Lemon cake",
+  "needs": "Cream (1)\nEgg (2)Lemon curd (2)Wheat (3)",
+  "source": "Cake Oven"
+ },
+ {
+  "name": "Lemon essential oil",
+  "needs": "Lemon (3)",
+  "source": "Essential Oils Lab"
+ },
+ {
+  "name": "Peanut butter milkshake",
+  "needs": "Peanuts (1)\nMilk (1)Cream (1)Cacao (3)",
+  "source": "Ice Cream Maker"
+ },
+ {
+  "name": "Tomato sauce",
+  "needs": "Brown sugar (1)\nLemon (1)Tomato (2)",
+  "source": "Sauce Maker"
+ },
+ {
+  "name": "Honey toast",
+  "needs": "Bread (1)\nEgg (1)Honey (1)Milk (1)",
+  "source": "Sandwich Bar"
+ },
+ {
+  "name": "Fried rice",
+  "needs": "Rice (5)\nEgg (5)",
+  "source": "Wok Kitchen"
+ },
+ {
+  "name": "Yogurt smoothie",
+  "needs": "Cherry (1)\nCream (1)Raspberry (2)White sugar (1)",
+  "source": "Smoothie Mixer"
+ },
+ {
+  "name": "Cloche hat",
+  "needs": "Strawberry (2)\nWool (6)",
+  "source": "Hat Maker"
+ },
+ {
+  "name": "Cucumber smoothie",
+  "needs": "Cucumber (3)\nHoney (1)Pineapple (3)",
+  "source": "Smoothie Mixer"
+ },
+ {
+  "name": "Blueberry Chutney",
+  "needs": "Brown Sugar (1)\nLemon (1)Onion (1)Blueberries (3)",
+  "source": "Jam Maker"
+ },
+ {
+  "name": "Flower shawl",
+  "needs": "Wool (2)\nSunflower (3)Blackberry (1)",
+  "source": "Loom"
+ },
+ {
+  "name": "Orange juice",
+  "needs": "Orange (2)",
+  "source": "Juice Press"
+ },
+ {
+  "name": "Peanut butter and jelly sandwich",
+  "needs": "Bread (2)Raspberry jam (1)Peanuts (1)",
+  "source": "Sandwich Bar"
+ },
+ {
+  "name": "Onion soup",
+  "needs": "Bread (2)\nCheese (1)Onion (3)",
+  "source": "Soup Kitchen"
+ },
+ {
+  "name": "Lemon candle",
+  "needs": "Beeswax (1)\nLemon (2)",
+  "source": "Candle Maker"
+ },
+ {
+  "name": "Top hat",
+  "needs": "Cotton fabric (3)\nDuck feather (1)Refined coal (1)",
+  "source": "Hat Maker"
+ },
+ {
+  "name": "Gnocchi",
+  "needs": "Potato (4)\nTomato (3)Wheat (2)Butter (2)",
+  "source": "Pasta Kitchen"
+ },
+ {
+  "name": "Winter veggies",
+  "needs": "Beetroot (2)\nCarrot (3)Potato (2)Pumpkin (2)",
+  "source": "BBQ Grill"
+ },
+ {
+  "name": "Rice noodles",
+  "needs": "Rice (5)",
+  "source": "Pasta Maker"
+ },
+ {
+  "name": "Noodle soup",
+  "needs": "Carrot (2)Chili pepper (1)Egg (2)Rice noodles (3)",
+  "source": "Soup Kitchen"
+ },
+ {
+  "name": "Gracious bouquet",
+  "needs": "Cotton fabric (1)\nLily (5)Gold ore (1)Diamond (1)",
+  "source": "Flower Shop"
+ },
+ {
+  "name": "Marmalade",
+  "needs": "Orange (3)",
+  "source": "Jam Maker"
+ },
+ {
+  "name": "Sun hat",
+  "needs": "Duck feather (2)\nIndigo (1)Raspberry (1)Wool (3)",
+  "source": "Hat Maker"
+ },
+ {
+  "name": "Veggie lasagna",
+  "needs": "Tomato sauce (1)\nFresh pasta (3)Carrot (1)Cheese (1)",
+  "source": "Pasta Kitchen"
+ },
+ {
+  "name": "Veggie platter",
+  "needs": "Bell pepper (2)\nCarrot (2)Tomato (2)Cream (1)",
+  "source": "Salad Bar"
+ },
+ {
+  "name": "Chamomile essential oil",
+  "needs": "Chamomile (5)",
+  "source": "Essential Oils Lab"
+ },
+ {
+  "name": "Hot dog",
+  "needs": "Bacon (2)\nBread (1)Tomato sauce (1)",
+  "source": "Hot Dog Stand"
+ },
+ {
+  "name": "Coleslaw",
+  "needs": "Cabbage (3)\nCarrot (2)Mayonnaise (1)",
+  "source": "Salad Bar"
+ },
+ {
+  "name": "Cotton candy",
+  "needs": "White sugar (3)Strawberry (1)",
+  "source": "Candy Machine"
+ },
+ {
+  "name": "Peach tart",
+  "needs": "Cream (1)\nEgg (2)Peach (3)Wheat (2)",
+  "source": "Pie Oven"
+ },
+ {
+  "name": "Tofu dog",
+  "needs": "Lettuce (3)\nSoybean (6)Tomato (4)",
+  "source": "Hot Dog Stand"
+ },
+ {
+  "name": "Big sushi roll",
+  "needs": "Lettuce (5)\nRice (20)Fish fillet (1)Egg (3)",
+  "source": "Sushi Bar"
+ },
+ {
+  "name": "Beetroot salad",
+  "needs": "Beetroot (3)Goat cheese (1)",
+  "source": "Salad Bar"
+ },
+ {
+  "name": "Plain donut",
+  "needs": "Milk (1)White sugar (1)Egg (1)Wheat (3)",
+  "source": "Donut Maker"
+ },
+ {
+  "name": "Salsa",
+  "needs": "Chili pepper (2)\nOnion (2)Tomato (2)",
+  "source": "Sauce Maker"
+ },
+ {
+  "name": "Taco",
+  "needs": "Corn bread (1)\nBacon (1)Salsa (1)",
+  "source": "Taco Kitchen"
+ },
+ {
+  "name": "Colourful omelet",
+  "needs": "Egg (2)\nCarrot (2)Bell pepper (1)Cabbage (1)",
+  "source": "Omelet Station"
+ },
+ {
+  "name": "Spring omelet",
+  "needs": "Egg (2)\nAsparagus (2)Butter (1)",
+  "source": "Omelet Station"
+ },
+ {
+  "name": "Summer rolls",
+  "needs": "Rice noodles (2)\nCarrot (2)Lettuce (1)Chili pepper (1)",
+  "source": "Salad Bar"
+ },
+ {
+  "name": "Orange sorbet",
+  "needs": "Honey (1)\nOrange (2)",
+  "source": "Ice Cream Maker"
+ },
+ {
+  "name": "Corn dog",
+  "needs": "Bacon (4)\nCorn (4)Olive oil (1)",
+  "source": "Hot Dog Stand"
+ },
+ {
+  "name": "Potato soup",
+  "needs": "Milk (1)\nOnion (2)Potato (3)",
+  "source": "Soup Kitchen"
+ },
+ {
+  "name": "Sesame brittle",
+  "needs": "Sesame (3)\nGinger (1)Honey (1)",
+  "source": "Candy Machine"
+ },
+ {
+  "name": "Affogato",
+  "needs": "Vanilla ice cream (1)\nEspresso (1)",
+  "source": "Ice Cream Maker"
+ },
+ {
+  "name": "Fish taco",
+  "needs": "Chili pepper (2)\nCorn bread (2)Fish fillet (1)Lemon (1)",
+  "source": "Taco Kitchen"
+ },
+ {
+  "name": "Peach jam",
+  "needs": "Peach (3)",
+  "source": "Jam Maker"
+ },
+ {
+  "name": "Lobster pasta",
+  "needs": "Lobster tail (1)\nCream (2)Fresh pasta (3)Tomato (4)",
+  "source": "Pasta Kitchen"
+ },
+ {
+  "name": "Cucumber sandwich",
+  "needs": "Cucumber (2)\nMayonnaise (1)Bread (2)",
+  "source": "Sandwich Bar"
+ },
+ {
+  "name": "Spicy fish",
+  "needs": "Fish fillet (1)\nChili pepper (3)Garlic (5)Olive oil (1)",
+  "source": "Wok Kitchen"
+ },
+ {
+  "name": "Sprinkled donut",
+  "needs": "Plain donut (1)Cacao (2)",
+  "source": "Donut Maker"
+ },
+ {
+  "name": "Cheese omelet",
+  "needs": "Egg (3)\nCheese (2)Tomato (2)Onion (1)",
+  "source": "Omelet Station"
+ },
+ {
+  "name": "Green tea",
+  "needs": "Tea leaf (5)",
+  "source": "Tea Stand"
+ },
+ {
+  "name": "Onion dog",
+  "needs": "Bacon (2)\nBread (1)Chili pepper (1)Onion (3)",
+  "source": "Hot Dog Stand"
+ },
+ {
+  "name": "Stuffed peppers",
+  "needs": "Bell pepper (3)\nBacon (1)Rice (3)Cheese (1)",
+  "source": "BBQ Grill"
+ },
+ {
+  "name": "Ginger essential oil",
+  "needs": "Ginger (5)",
+  "source": "Essential Oils Lab"
+ },
+ {
+  "name": "Milk tea",
+  "needs": "Milk (1)\nTea leaf (3)",
+  "source": "Tea Stand"
+ },
+ {
+  "name": "Bell pepper soup",
+  "needs": "Bread (1)\nOlive oil (1)Chili pepper (1)Bell pepper (2)",
+  "source": "Soup Kitchen"
+ },
+ {
+  "name": "Chocolate fondue",
+  "needs": "Chocolate (1)\nStrawberry (3)",
+  "source": "Fondue Pot"
+ },
+ {
+  "name": "Quesadilla",
+  "needs": "Cheese (1)\nChili pepper (2)Wheat (4)",
+  "source": "Taco Kitchen"
+ },
+ {
+  "name": "Fruit salad",
+  "needs": "Blackberry (2)\nHoney (1)Orange (1)Strawberry (3)",
+  "source": "Salad Bar"
+ },
+ {
+  "name": "Crunchy donut",
+  "needs": "Plain donut (1)Cacao (1)Peanuts (1)",
+  "source": "Donut Maker"
+ },
+ {
+  "name": "Pasta carbonara",
+  "needs": "Fresh pasta (3)\nBacon (2)Egg (1)Cheese (1)",
+  "source": "Pasta Kitchen"
+ },
+ {
+  "name": "Peach ice cream",
+  "needs": "Cream (1)\nHoney (1)Peach (2)",
+  "source": "Ice Cream Maker"
+ },
+ {
+  "name": "Honey tea",
+  "needs": "Honey (1)\nTea leaf (3)",
+  "source": "Tea Stand"
+ },
+ {
+  "name": "Broccoli pasta",
+  "needs": "Broccoli (3)\nCheese (1)Fresh pasta (3)",
+  "source": "Pasta Kitchen"
+ },
+ {
+  "name": "Rice omelet",
+  "needs": "Egg (3)\nTomato sauce (2)\nRice (1)",
+  "source": "Omelet Station"
+ },
+ {
+  "name": "Summer salad",
+  "needs": "Goat cheese (1)\nOnion (3)Peach (1)Tomato (3)",
+  "source": "Salad Bar"
+ },
+ {
+  "name": "Grape juice",
+  "needs": "Grapes (2)",
+  "source": "Juice Press"
+ },
+ {
+  "name": "Onion melt",
+  "needs": "Corn bread (2)\nOnion (3)Cheese (1)",
+  "source": "Sandwich Bar"
+ },
+ {
+  "name": "Honey soap",
+  "needs": "Goat milk (1)\nCacao (2)Honeycomb (1)",
+  "source": "Bath Kiosk"
+ },
+ {
+  "name": "Lemon lotion",
+  "needs": "Olive oil (1)\nLemon (1)",
+  "source": "Bath Kiosk"
+ },
+ {
+  "name": "Colorful candles",
+  "needs": "Beeswax (1)Raspberry (1)Carrot (1)",
+  "source": "Candle Maker"
+ },
+ {
+  "name": "Mint essential oil",
+  "needs": "Mint (3)",
+  "source": "Essential Oils Lab"
+ },
+ {
+  "name": "Grape jam",
+  "needs": "Grapes (3)",
+  "source": "Jam Maker"
+ },
+ {
+  "name": "Mint ice cream",
+  "needs": "Cream (1)\nWhite sugar (1)Mint (2)Cacao (1)",
+  "source": "Ice Cream Maker"
+ },
+ {
+  "name": "Flower crown",
+  "needs": "Peony (5)\nCotton (4)",
+  "source": "Hat Maker"
+ },
+ {
+  "name": "Lemon tea",
+  "needs": "Lemon (1)\nTea leaf (3)",
+  "source": "Tea Stand"
+ },
+ {
+  "name": "Bacon fondue",
+  "needs": "Bacon (3)\nBroccoli (1)Bell pepper (1)Olive oil (1)",
+  "source": "Fondue Pot"
+ },
+ {
+  "name": "Peanut noodles",
+  "needs": "Ginger (1)\nRice noodles (1)Soy sauce (1)Peanuts (1)",
+  "source": "Wok Kitchen"
+ },
+ {
+  "name": "Gingerbread cookie",
+  "needs": "Wheat (5)\nButter (1)Syrup (1)Ginger (2)",
+  "source": "Bakery"
+ },
+ {
+  "name": "Cream donut",
+  "needs": "Plain donut (1)Cream (1)Brown sugar (1)",
+  "source": "Donut Maker"
+ },
+ {
+  "name": "Nachos",
+  "needs": "Cheese (1)\nCorn (4)Salsa (1)",
+  "source": "Taco Kitchen"
+ },
+ {
+  "name": "Spicy pasta",
+  "needs": "Fresh pasta (3)\nTomato sauce (1)Chili pepper (3)Onion (2)",
+  "source": "Pasta Kitchen"
+ },
+ {
+  "name": "Broccoli soup",
+  "needs": "Broccoli (3)\nOnion (1)Potato (3)",
+  "source": "Soup Kitchen"
+ },
+ {
+  "name": "Bacon fries",
+  "needs": "Chili pepper (1)\nBacon (2)Potato (4)Garlic (1)",
+  "source": "Deep Fryer"
+ },
+ {
+  "name": "Potato omelet",
+  "needs": "Egg (3)\nBacon (3)\nPotato (1)",
+  "source": "Omelet Station"
+ },
+ {
+  "name": "Mixed smoothie",
+  "needs": "Lemon (1)\nOrange (2)Peach (2)",
+  "source": "Smoothie Mixer"
+ },
+ {
+  "name": "Iced banana latte",
+  "needs": "Banana (1)\nCoffee bean (2)Milk (1)",
+  "source": "Coffee Kiosk"
+ },
+ {
+  "name": "Apple ginger tea",
+  "needs": "Ginger (1)\nApple (2)Tea leaf (1)",
+  "source": "Tea Stand"
+ },
+ {
+  "name": "Bacon donut",
+  "needs": "Plain donut (1)Bacon (3)Syrup (1)",
+  "source": "Donut Maker"
+ },
+ {
+  "name": "Passion fruit juice",
+  "needs": "Passion fruit (2)",
+  "source": "Juice Press"
+ },
+ {
+  "name": "Orange tea",
+  "needs": "Orange (1)\nTea leaf (3)",
+  "source": "Tea Stand"
+ },
+ {
+  "name": "Fruit cake",
+  "needs": "Cherry (2)\nGrapes (2)Orange (2)Wheat (3)",
+  "source": "Cake Oven"
+ },
+ {
+  "name": "Mushroom salad",
+  "needs": "Mushroom (3)\nLettuce (1)Potato (2)Bacon (1)",
+  "source": "Salad Bar"
+ },
+ {
+  "name": "Tofu stir fry",
+  "needs": "Soybean (3)\nOnion (3)Broccoli (3)Sesame (3)",
+  "source": "Wok Kitchen"
+ },
+ {
+  "name": "Candy bouquet",
+  "needs": "Peony (3)\nToffee (1)Caramel apple (1)",
+  "source": "Flower Shop"
+ },
+ {
+  "name": "Grilled eggplant",
+  "needs": "Eggplant (3)\nSalsa (1)",
+  "source": "BBQ Grill"
+ },
+ {
+  "name": "Banana bread",
+  "needs": "Banana (3)\nEgg (1)Grapes (2)Wheat (3)",
+  "source": "Bakery"
+ },
+ {
+  "name": "Cheese fondue",
+  "needs": "Potato bread (1)\nCheese (1)Mushroom (2)Tomato (1)",
+  "source": "Fondue Pot"
+ },
+ {
+  "name": "Hand pies",
+  "needs": "Apple jam (1)\nEgg (2)Wheat (5)",
+  "source": "Deep Fryer"
+ },
+ {
+  "name": "Pickles",
+  "needs": "Cucumber (3)\nOnion (2)Lemon (1)",
+  "source": "Preservation Station"
+ },
+ {
+  "name": "Iced tea",
+  "needs": "Peach (1)\nTea leaf (3)",
+  "source": "Tea Stand"
+ },
+ {
+  "name": "Goat cheese toast",
+  "needs": "Bread (1)\nGoat cheese (1)Grapes (3)",
+  "source": "Sandwich Bar"
+ },
+ {
+  "name": "Watermelon juice",
+  "needs": "Watermelon (2)",
+  "source": "Juice Press"
+ },
+ {
+  "name": "Birthday bouquet",
+  "needs": "Cherry juice (1)Peony (3)Lily (1)Indigo (1)",
+  "source": "Flower Shop"
+ },
+ {
+  "name": "Passion fruit pie",
+  "needs": "Passion fruit (3)\nWheat (2)Egg (1)",
+  "source": "Pie Oven"
+ },
+ {
+  "name": "Soft bouquet",
+  "needs": "Peony (4)\nCotton (1)Cotton fabric (1)",
+  "source": "Flower Shop"
+ },
+ {
+  "name": "Black sesame smoothie",
+  "needs": "Sesame (3)\nBanana (1)Goat milk (2)",
+  "source": "Smoothie Mixer"
+ },
+ {
+  "name": "Exfoliating soap",
+  "needs": "Cacao (2)\nCoffee bean (2)Raspberry (1)",
+  "source": "Bath Kiosk"
+ },
+ {
+  "name": "Filled donut",
+  "needs": "Plain donut (1)Raspberry jam (1)",
+  "source": "Donut Maker"
+ },
+ {
+  "name": "Banana pancakes",
+  "needs": "Banana (1)\nBlackberry (2)Cream (1)Wheat (3)",
+  "source": "BBQ Grill"
+ },
+ {
+  "name": "Plum jam",
+  "needs": "Plum (3)",
+  "source": "Jam Maker"
+ },
+ {
+  "name": "Tea pot",
+  "needs": "Clay (3)\nCoffee bean (1)Gold ore (1)",
+  "source": "Pottery Studio"
+ },
+ {
+  "name": "Floral candle",
+  "needs": "Beeswax (1)\nPeony (2)Sunflower (2)Indigo (3)",
+  "source": "Candle Maker"
+ },
+ {
+  "name": "Chocolate roll",
+  "needs": "Cacao (5)\nCream (1)Wheat (3)Mint (3)",
+  "source": "Cake Oven"
+ },
+ {
+  "name": "Canned fish",
+  "needs": "Fish fillet (2)\nChili pepper (1)Olive oil (1)",
+  "source": "Preservation Station"
+ },
+ {
+  "name": "Hummus",
+  "needs": "Chickpea (3)\nLemon (2)Garlic (1)",
+  "source": "Sauce Maker"
+ },
+ {
+  "name": "Banana split",
+  "needs": "Banana (1)\nCherry (3)Cream (1)",
+  "source": "Ice Cream Maker"
+ },
+ {
+  "name": "Fish skewer",
+  "needs": "Fish fillet (1)\nMushroom (3)Ginger (1)Sesame (2)",
+  "source": "BBQ Grill"
+ },
+ {
+  "name": "Passion fruit jam",
+  "needs": "Passion fruit (3)",
+  "source": "Jam Maker"
+ },
+ {
+  "name": "Potted plant",
+  "needs": "Clay (3)\nSunflower (1)",
+  "source": "Pottery Studio"
+ },
+ {
+  "name": "Mint tea",
+  "needs": "Tea leaf (3)\nMint (1)Watermelon (1)",
+  "source": "Tea Stand"
+ },
+ {
+  "name": "Mushroom pot pie",
+  "needs": "Mushroom (3)\nCabbage (3)Wheat (3)Egg (2)",
+  "source": "Pie Oven"
+ },
+ {
+  "name": "Mango juice",
+  "needs": "Mango (2)",
+  "source": "Juice Press"
+ },
+ {
+  "name": "Flower pendant",
+  "needs": "Peony (3)\nPlatinum bar (1)Gold bar (2)",
+  "source": "Jeweler"
+ },
+ {
+  "name": "Chili poppers",
+  "needs": "Chili pepper (3)\nWheat (1)Bacon (3)Cheese (1)",
+  "source": "Deep Fryer"
+ },
+ {
+  "name": "Falafel",
+  "needs": "Chili pepper (1)\nChickpea (3)Onion (2)Garlic (2)",
+  "source": "Deep Fryer"
+ },
+ {
+  "name": "Kimchi",
+  "needs": "Cabbage (5)\nGinger (1)Chili pepper (1)Garlic (1)",
+  "source": "Preservation Station"
+ },
+ {
+  "name": "Eggplant parmesan",
+  "needs": "Eggplant (3)\nCheese (1)Tomato sauce (1)",
+  "source": "Pie Oven"
+ },
+ {
+  "name": "Honey face mask",
+  "needs": "Egg (2)\nHoney (1)Lemon (1)",
+  "source": "Bath Kiosk"
+ },
+ {
+  "name": "Clay mug",
+  "needs": "Clay (3)\nIndigo (2)Peony (1)",
+  "source": "Pottery Studio"
+ },
+ {
+  "name": "Rich fudge",
+  "needs": "Cacao (3)\nButter (3)White sugar (2)",
+  "source": "Fudge Shop"
+ },
+ {
+  "name": "Cocoa smoothie",
+  "needs": "Banana (2)\nCacao (3)Milk (1)",
+  "source": "Smoothie Mixer"
+ },
+ {
+  "name": "Fried candy bar",
+  "needs": "Cacao (3)\nCookie (1)Peanuts (1)",
+  "source": "Deep Fryer"
+ },
+ {
+  "name": "Tart dressing",
+  "needs": "Passion fruit (2)\nChili pepper (2)Honey (1)",
+  "source": "Sauce Maker"
+ },
+ {
+  "name": "Tropical fondue",
+  "needs": "White sugar (1)\nCream (2)Pineapple (3)Mango (2)",
+  "source": "Fondue Pot"
+ },
+ {
+  "name": "Chamomile tea",
+  "needs": "Chamomile (5)\nHoneycomb (1)",
+  "source": "Tea Stand"
+ },
+ {
+  "name": "Mushroom pasta",
+  "needs": "Mushroom (5)\nFresh pasta (3)Goat milk (1)",
+  "source": "Pasta Kitchen"
+ },
+ {
+  "name": "Macaroon",
+  "needs": "Cacao (1)\nCoconut (2)White sugar (2)",
+  "source": "Bakery"
+ },
+ {
+  "name": "Plum smoothie",
+  "needs": "Plum (3)\nGrapes (1)Mint (1)Honey (1)",
+  "source": "Smoothie Mixer"
+ },
+ {
+  "name": "Dried fruit",
+  "needs": "Grapes (1)\nRaspberry (1)Strawberry (1)Orange (1)",
+  "source": "Preservation Station"
+ },
+ {
+  "name": "Mint fudge",
+  "needs": "Butter (2)\nCacao (2)White sugar (1)Mint (3)",
+  "source": "Fudge Shop"
+ },
+ {
+  "name": "Coconut ice cream",
+  "needs": "Coconut (2)\nSyrup (1)",
+  "source": "Ice Cream Maker"
+ },
+ {
+  "name": "Samosa",
+  "needs": "Chickpea (2)\nWheat (4)Chili pepper (1)Potato (3)",
+  "source": "Deep Fryer"
+ },
+ {
+  "name": "Plain yogurt",
+  "needs": "Milk (3)\nCream (2)",
+  "source": "Yogurt Maker"
+ },
+ {
+  "name": "Mushroom soup",
+  "needs": "Mushroom (3)\nMilk (1)Onion (2)",
+  "source": "Soup Kitchen"
+ },
+ {
+  "name": "Chili fudge",
+  "needs": "Butter (2)\nCacao (2)White sugar (1)Chili pepper (3)",
+  "source": "Fudge Shop"
+ },
+ {
+  "name": "Tropical smoothie",
+  "needs": "Coconut (1)\nBanana (1)Passion fruit (2)Mango (2)",
+  "source": "Smoothie Mixer"
+ },
+ {
+  "name": "Guava juice",
+  "needs": "Guava (2)",
+  "source": "Juice Press"
+ },
+ {
+  "name": "Guava compote",
+  "needs": "Guava (2)\nLemon (1)\nWhite sugar (1)",
+  "source": "Preservation Station"
+ },
+ {
+  "name": "Strawberry yogurt",
+  "needs": "Plain yogurt (1)\nStrawberry jam (1)",
+  "source": "Yogurt Maker"
+ },
+ {
+  "name": "Veggie bouquet",
+  "needs": "Broccoli (3)\nTomato (3)Mushroom (3)Cotton fabric (1)",
+  "source": "Flower Shop"
+ },
+ {
+  "name": "Chickpea stew",
+  "needs": "Coconut (1)\nTomato (2)Chickpea (3)",
+  "source": "Stew Pot"
+ },
+ {
+  "name": "Fruit sorbet",
+  "needs": "Guava (1)\nPassion fruit (1)\nMango (2)\nWhite sugar (3)",
+  "source": "Ice Cream Maker"
+ },
+ {
+  "name": "Pomegranate tea",
+  "needs": "Pomegranate (1)\nTea leaf (4)",
+  "source": "Tea Stand"
+ },
+ {
+  "name": "Lemon fudge",
+  "needs": "Butter (2)\nLemon (2)White sugar (2)Milk (3)",
+  "source": "Fudge Shop"
+ },
+ {
+  "name": "Pomegranate cake",
+  "needs": "Pomegranate (1)\nEgg (2)Cream (2)Wheat (6)",
+  "source": "Cake Oven"
+ },
+ {
+  "name": "Hummus wrap",
+  "needs": "Bread (2)\nLettuce (1)Hummus (1)",
+  "source": "Sandwich Bar"
+ },
+ {
+  "name": "Tropical yogurt",
+  "needs": "Plain yogurt (1)\nRaspberry (4)Passion fruit (1)Mango (2)",
+  "source": "Yogurt Maker"
+ },
+ {
+  "name": "Chili stew",
+  "needs": "Chili pepper (3)\nBacon (2)Onion (2)Cream (1)",
+  "source": "Stew Pot"
+ },
+ {
+  "name": "Plain cupcake",
+  "needs": "Milk (2)\nWhite sugar (3)\nEgg (1)\nWheat (5)",
+  "source": "Cupcake Maker"
+ },
+ {
+  "name": "Guava cupcake",
+  "needs": "Plain cupcake (1)\nGuava (2)\nCream (1)",
+  "source": "Cupcake Maker"
+ },
+ {
+  "name": "Rice ball",
+  "needs": "Rice (20)\nSesame (1)Plum (1)",
+  "source": "Sushi Bar"
+ },
+ {
+  "name": "Fresh diffuser",
+  "needs": "Ginger essential oil (1)\nMint essential oil (1)",
+  "source": "Perfumerie"
+ },
+ {
+  "name": "Peanut fudge",
+  "needs": "Butter (2)\nCacao (2)White sugar (1)Peanuts (2)",
+  "source": "Fudge Shop"
+ },
+ {
+  "name": "Tropical cupcake",
+  "needs": "Plain cupcake (1)\nPineapple (3)\nCoconut (2)",
+  "source": "Cupcake Maker"
+ },
+ {
+  "name": "Winter stew",
+  "needs": "Bacon (1)\nPotato (3)\nOnion (2)\nMushroom (2)",
+  "source": "Stew Pot"
+ },
+ {
+  "name": "Zesty perfume",
+  "needs": "Lemon essential oil (1)\nGinger (3)",
+  "source": "Perfumerie"
+ },
+ {
+  "name": "Cookie cupcake",
+  "needs": "Plain cupcake (1)\nCream (2)\nCookie (2)\nCacao (1)",
+  "source": "Cupcake Maker"
+ },
+ {
+  "name": "Plain waffles",
+  "needs": "White sugar (2)\nEgg (3)\nWheat (5)",
+  "source": "Waffle Maker"
+ },
+ {
+  "name": "Berry waffles",
+  "needs": "Plain waffles (1)\nSyrup (1)\nRaspberry (3)\nBlackberry (2)",
+  "source": "Waffle Maker"
+ },
+ {
+  "name": "Calming diffuser",
+  "needs": "Chamomile essential oil (1)\nIndigo (3)",
+  "source": "Perfumerie"
+ },
+ {
+  "name": "Orange salad",
+  "needs": "Cheese (1)\nLettuce (3)\nPomegranate (1)\nOrange (2)",
+  "source": "Salad Bar"
+ },
+ {
+  "name": "Chocolate waffles",
+  "needs": "Plain waffles (1)\nCacao (2)\nStrawberry (3)\nBanana (1)",
+  "source": "Waffle Maker"
+ },
+ {
+  "name": "Blueberry waffles",
+  "needs": "Plain waffles (1)\nMilk (1)\nCacao (2)\nBlueberries (3)",
+  "source": "Waffle Maker"
+ },
+ {
+  "name": "Breakfast waffles",
+  "needs": "Plain waffles (1)\nBacon (2)\nEgg (1)\nAsparagus (2)",
+  "source": "Waffle Maker"
+ },
+ {
+  "name": "Breakfast bowl",
+  "needs": "Plain yogurt (1)\nOats (4)\nHoney (1)\nBlackberry (2)",
+  "source": "Yogurt Maker"
+ },
+ {
+  "name": "Apple porridge",
+  "needs": "Apple (1)\nApple jam (2)\nOats (4)",
+  "source": "Porridge Bar"
+ },
+ {
+  "name": "Pineapple coconut bars",
+  "needs": "Coconut (1)\nWhite sugar (2)\nOats (3)\nPineapple (2)",
+  "source": "Bakery"
+ },
+ {
+  "name": "Sweet porridge",
+  "needs": "Peach (1)\nHoney (2)\nOats (3)",
+  "source": "Porridge Bar"
+ },
+ {
+  "name": "Rich soap",
+  "needs": "Oats (2)\nPomegranate (1)\nCoconut (1)",
+  "source": "Bath Kiosk"
+ },
+ {
+  "name": "Fresh porridge",
+  "needs": "Pomegranate (1)\nMint (2)\nCoconut (2)\nOats (3)",
+  "source": "Porridge Bar"
+ },
+ {
+  "name": "Vanilla milkshake",
+  "needs": "Vanilla ice cream (1)\nCookie (2)\nToffee (1)\nSyrup (1)",
+  "source": "Milkshake Bar"
+ },
+ {
+  "name": "Mocha milkshake",
+  "needs": "Chocolate ice cream (1)\nEspresso (2)",
+  "source": "Milkshake Bar"
+ },
+ {
+  "name": "Fruity milkshake",
+  "needs": "Peach ice cream (1)\nOrange (2)\nLemon (1)",
+  "source": "Milkshake Bar"
+ },
+ {
+  "name": "Bean dip",
+  "needs": "Black bean (3)\nTomato (1)\nChili pepper (1)",
+  "source": "Sauce Maker"
+ },
+ {
+  "name": "Bean salad",
+  "needs": "Black bean (3)\nTomato (1)\nLettuce (2)\nCorn (1)",
+  "source": "Salad Bar"
+ },
+ {
+  "name": "Spicy bean taco",
+  "needs": "Taco (1)\nBlack bean (2)",
+  "source": "Taco Kitchen"
+ }
+]</script>
+<script>
+ const $ = (s) => document.querySelector(s);
+ const fmt = (n) => Intl.NumberFormat('en-US').format(n);
+ function parseNeeds(text) {
+   const map = {};
+   if (!text) return map;
+   const rx = /([A-Za-z0-9][A-Za-z0-9 '\-\s]+?)\s*\((\d+)\)/g;
+   let m;
+   while ((m = rx.exec(text)) !== null) {
+     const name = m[1].trim();
+     const count = parseInt(m[2], 10);
+     if (!name || !count) continue;
+     map[name] = (map[name] || 0) + count;
+   }
+   return map;
+ }
+ const GOODS = JSON.parse(document.getElementById('goods-data').textContent);
+ const GOODS_MAP = new Map(GOODS.map(g => [g.name, parseNeeds(g.needs)]));
+ const GOODS_SRC = new Map(GOODS.map(g => [g.name, g.source || '']));
+  const listBody = $('#listBody');
+ const needsBody = $('#needsBody');
+ const recursiveChk = $('#recursive');
+ const modeTag = $('#modeTag');
+ const resetBtn = $('#resetBtn');
+ const searchInput = $('#search');
+ const resultsBox = document.getElementById('liveResults');
+ // Production list (Name -> Qty)
+ const production = new Map();
+ function renderList() {
+   listBody.innerHTML = '';
+   const rows = [];
+   for (const [name, qty] of production) {
+     const tr = document.createElement('tr');
+     const tdName = document.createElement('td'); tdName.innerHTML=''; tdName.style.display='flex'; tdName.style.alignItems='center'; const icon=document.createElement('img'); icon.width=28; icon.height=28; icon.style.objectFit='contain'; icon.style.maxWidth='22px'; icon.style.maxHeight='22px'; (async()=>{const u=await findIconUrl(name); if(u) icon.src=u;})(); const label=document.createElement('span'); label.textContent=`${name} - ${GOODS_SRC.get(name)||''}`.trim(); tdName.append(icon,label);
+     const tdQty = document.createElement('td');
+const wrap = document.createElement('div'); wrap.className='qty-wrap';
+const btnMinus5=document.createElement('button'); btnMinus5.type='button'; btnMinus5.className='qty-btn step5'; btnMinus5.setAttribute('aria-label','decrease by 5'); btnMinus5.textContent='−5';
+const btnMinus=document.createElement('button'); btnMinus.type='button'; btnMinus.className='qty-btn'; btnMinus.setAttribute('aria-label','decrease'); btnMinus.textContent='−';
+const input = document.createElement('input'); input.type='number'; input.min='1'; input.step='1'; input.value=qty; input.className='qty-input';
+const btnPlus=document.createElement('button'); btnPlus.type='button'; btnPlus.className='qty-btn'; btnPlus.setAttribute('aria-label','increase'); btnPlus.textContent='+';
+const btnPlus5=document.createElement('button'); btnPlus5.type='button'; btnPlus5.className='qty-btn step5'; btnPlus5.setAttribute('aria-label','increase by 5'); btnPlus5.textContent='+5';
+input.addEventListener('change', () => {
+  const v = Math.max(1, parseInt(input.value || '1', 10));
+  production.set(name, v);
+  updateNeeds();
+});
+btnMinus.addEventListener('click', ()=>{ const v = Math.max(1, (parseInt(input.value||'1',10) - 1)); input.value = v; production.set(name, v); updateNeeds(); updateTree(); });
+btnPlus.addEventListener('click',  ()=>{ const v = Math.max(1, (parseInt(input.value||'1',10) + 1)); input.value = v; production.set(name, v); updateNeeds(); updateTree(); });
+btnMinus5.addEventListener('click',()=>{ const v = Math.max(1, (parseInt(input.value||'1',10) - 5)); input.value = v; production.set(name, v); updateNeeds(); updateTree(); });
+btnPlus5.addEventListener('click', ()=>{ const v = Math.max(1, (parseInt(input.value||'1',10) + 5)); input.value = v; production.set(name, v); updateNeeds(); updateTree(); });
+wrap.append(btnMinus5, btnMinus, input, btnPlus, btnPlus5); tdQty.appendChild(wrap);
+     const tdAct = document.createElement('td');
+     const del = document.createElement('button'); del.className = 'btn-danger'; del.textContent = 'Remove';
+     del.addEventListener('click', () => { production.delete(name); renderList(); updateNeeds(); updateTree(); });
+     tdAct.appendChild(del);
+     tr.append(tdName, tdQty, tdAct);
+     rows.push(tr);
+   }
+   if (rows.length === 0) {
+     const tr = document.createElement('tr');
+     const td = document.createElement('td'); td.colSpan = 3; td.innerHTML = '<span class="muted">No products added yet.</span>';
+     tr.appendChild(td); rows.push(tr);
+   }
+   rows.forEach(r => listBody.appendChild(r));
+ }
+ function accumulateTotals(name, qty, totals, recursive, stack=new Set()) {
+   if (stack.has(name)) return;
+   stack.add(name);
+   const needs = GOODS_MAP.get(name) || {};
+   for (const ing in needs) {
+     const needQty = needs[ing] * qty;
+     const ingNeeds = GOODS_MAP.get(ing);
+     if (recursive && ingNeeds && Object.keys(ingNeeds).length > 0) {
+       accumulateTotals(ing, needQty, totals, true, stack);
+     } else {
+       totals[ing] = (totals[ing] || 0) + needQty;
+     }
+   }
+   stack.delete(name);
+ }
+ // === Tree view helpers ===
+ function buildTreeForProduct(name, qty, recursive, stack=new Set()) {
+   const node = { name, qty, src: GOODS_SRC.get(name) || '', children: [] };
+   if (!recursive) {
+     const needs = GOODS_MAP.get(name) || {};
+     for (const ing in needs) {
+       node.children.push({ name: ing, qty: needs[ing] * qty, src: GOODS_SRC.get(ing) || '', children: [] });
+     }
+     return node;
+   }
+   if (stack.has(name)) return node; // cycle guard
+   stack.add(name);
+   const needs = GOODS_MAP.get(name) || {};
+   for (const ing in needs) {
+     const childQty = needs[ing] * qty;
+     const ingNeeds = GOODS_MAP.get(ing);
+     if (ingNeeds && Object.keys(ingNeeds).length > 0) {
+       node.children.push(buildTreeForProduct(ing, childQty, true, stack));
+     } else {
+       node.children.push({ name: ing, qty: childQty, src: GOODS_SRC.get(ing) || '', children: [] });
+     }
+   }
+   stack.delete(name);
+   return node;
+ }
+ function renderTree(container, nodes) {
+   container.innerHTML = '';
+   if (!nodes || nodes.length === 0) {
+     const p = document.createElement('p');
+     p.className = 'muted';
+     p.textContent = 'No products added yet.';
+     container.appendChild(p);
+     return;
+   }
+   const ul = document.createElement('ul');
+   nodes.forEach(n => ul.appendChild(renderNode(n)));
+   container.appendChild(ul);
+ }
+ function renderNode(n) {
+   const li = document.createElement('li');
+   li.className = 'node-wrapper';
+   const row = document.createElement('div');
+   row.className = 'node';
+   if (n.children && n.children.length) {
+     const twisty = document.createElement('span');
+     twisty.textContent = '▾';
+     twisty.className = 'twisty';
+     twisty.addEventListener('click', () => {
+       li.classList.toggle('collapsed');
+       twisty.textContent = li.classList.contains('collapsed') ? '▸' : '▾';
+     });
+     row.appendChild(twisty);
+   } else {
+     const spacer = document.createElement('span');
+     spacer.textContent = '•';
+     spacer.className = 'twisty';
+     spacer.style.visibility = 'hidden';
+     row.appendChild(spacer);
+   }
+   const nameEl = document.createElement('span');
+   nameEl.textContent = n.name;
+   const qtyEl = document.createElement('span');
+   qtyEl.textContent = `× ${fmt(n.qty)}`;
+   qtyEl.className = 'qty';
+   const srcEl = document.createElement('span');
+   srcEl.textContent = n.src ? `– ${n.src}` : '';
+   srcEl.className = 'src';
+   const iconNode=makeIconImgFor(n.name,28); row.append(iconNode, nameEl, qtyEl, srcEl);
+   li.appendChild(row);
+   if (n.children && n.children.length) {
+     const ul = document.createElement('ul');
+     n.children.forEach(c => ul.appendChild(renderNode(c)));
+     li.appendChild(ul);
+   }
+   return li;
+ }
+ function updateTree() {
+   const container = document.getElementById('treeView');
+   const hint = document.getElementById('treeHint');
+   const recursive = true; // force recursive tree always on
+   const roots = [];
+   for (const [name, qty] of production) {
+     roots.push(buildTreeForProduct(name, qty, recursive));
+   }
+   renderTree(container, roots);
+   if (hint) { hint.style.display = production.size ? '' : 'none'; }
+ }
+ function updateNeeds() {
+   const recursive = recursiveChk.checked;
+   modeTag.textContent = recursive ? 'Base ingredients (recursive)' : 'Direct ingredients';
+   const totals = Object.create(null);
+   for (const [name, qty] of production) {
+     accumulateTotals(name, qty, totals, recursive);
+   }
+   needsBody.innerHTML = '';
+   const entries = Object.entries(totals).sort((a,b)=> a[0].localeCompare(b[0], 'en'));
+   if (entries.length === 0) {
+     const tr = document.createElement('tr');
+     const td = document.createElement('td'); td.colSpan = 2; td.innerHTML = '<span class="muted">No ingredients yet — add products.</span>';
+     tr.appendChild(td); needsBody.appendChild(tr);
+     return;
+   }
+   for (const [ing, q] of entries) {
+     const tr = document.createElement('tr');
+     const tdN = document.createElement('td'); tdN.innerHTML=''; const icon=makeIconImgFor(ing,28); const label=document.createElement('span'); label.textContent=ing; tdN.append(icon,label);
+     const tdQ = document.createElement('td'); tdQ.textContent = fmt(q);
+     tr.append(tdN, tdQ); needsBody.appendChild(tr);
+   }
+ }
+ 
+// NEW ICON SYSTEM FOR NON-SEARCH
+function toPascalUnderscore(name){return name.normalize('NFKD').replace(/[̀-ͯ]/g,'').replace(/&/g,'and').trim().split(/[^A-Za-z0-9]+/).filter(x=>x.length).map(w=>w.charAt(0).toUpperCase()+w.slice(1).toLowerCase()).join('_');}
+function iconExtFor(name){const needs=GOODS_MAP.get(name); if(needs && Object.keys(needs).length>0) return '.png'; return '.webp';}
+async function findIconUrl2(name){const stem=toPascalUnderscore(name); const ext=iconExtFor(name); const primary='./image/'+stem+ext; const ok1=await new Promise(res=>{const i=new Image(); i.onload=()=>res(true); i.onerror=()=>res(false); i.src=primary;}); if(ok1) return primary; const fallback='./image/'+name.toLowerCase().replace(/[^a-z0-9]+/g,'_')+'.png'; const ok2=await new Promise(res=>{const i=new Image(); i.onload=()=>res(true); i.onerror=()=>res(false); i.src=fallback;}); return ok2?fallback:'';}
+function makeIconImgFor(name,size=28){const img=document.createElement('img'); img.width=size; img.height=size; img.style.objectFit='contain'; img.style.maxWidth=size+'px'; img.style.maxHeight=size+'px'; img.style.borderRadius='6px'; img.style.marginRight='6px'; (async()=>{const u=await findIconUrl2(name); if(u) img.src=u;})(); return img;}
+
+// --- Icon helpers (for Live Search) ---
+function normalizeStem(name, keepCase=false){
+  let s = name
+    .normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/&/g, 'and')
+    .replace(/[^A-Za-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return keepCase ? s : s.toLowerCase();
+}
+async function findIconUrl(name){
+  const stems = [normalizeStem(name, true), normalizeStem(name, false)];
+  const base = './image/';
+  const exts = ['.png', '.webp', '.jpg', '.jpeg'];
+  for(const stem of stems){
+    for(const ext of exts){
+      const url = base + stem + ext;
+      const ok = await new Promise(res => {
+        const img = new Image();
+        img.onload = () => res(true);
+        img.onerror = () => res(false);
+        img.src = url;
+      });
+      if (ok) return url;
+    }
+  }
+  return '';
+}
+// --- End icon helpers ---
+// ===== Live search =====
+ function highlight(text, query) {
+   if (!query) return text;
+   const rx = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')})`, 'gi');
+   return text.replace(rx, '<span class="match">$1</span>');
+ }
+ function showResults(list) {
+  resultsBox.innerHTML = '';
+  if (list.length === 0) { resultsBox.classList.add('hidden'); return; }
+  list.forEach((g) => {
+    const li = document.createElement('li');
+    li.style.display = 'flex';
+    li.style.alignItems = 'center';
+    li.style.gap = '10px';
+
+    // Placeholder block (grey square)
+    const ph = document.createElement('div');
+    ph.setAttribute('aria-hidden', 'true');
+    ph.style.width = '28px';
+    ph.style.height = '28px';
+    ph.style.borderRadius = '6px';
+    ph.style.background = '#1f2937';
+    ph.style.flexShrink = '0';
+    li.appendChild(ph);
+
+    // Real <img>, filled once URL is resolved
+    const img = document.createElement('img');
+    img.alt = g.name;
+    img.width = 28;
+    img.height = 28;
+    img.loading = 'lazy';
+    img.decoding = 'async';
+    img.style.borderRadius = '6px';
+    img.style.objectFit = 'cover';
+    img.style.flexShrink = '0';
+    img.style.display = 'none';
+    li.appendChild(img);
+
+    // Resolve icon URL asynchronously
+    (async () => {
+      try {
+        const url = await findIconUrl(g.name);
+        if (url) {
+          img.src = url;
+          img.style.display = 'block';
+          ph.style.display = 'none';
+        }
+      } catch (e) { /* ignore */ }
+    })();
+
+    const left = document.createElement('span');
+    left.className = 'left';
+    left.innerHTML = highlight(g.name, searchInput.value.trim());
+
+    const right = document.createElement('span');
+    right.className = 'right';
+    right.textContent = g.source || '';
+
+    const textWrap = document.createElement('div');
+    textWrap.style.display = 'flex';
+    textWrap.style.justifyContent = 'space-between';
+    textWrap.style.alignItems = 'center';
+    textWrap.style.gap = '10px';
+    textWrap.style.flex = '1 1 auto';
+    textWrap.append(left, right);
+
+    li.appendChild(textWrap);
+
+    li.addEventListener('click', () => addProduct(g.name));
+    resultsBox.appendChild(li);
+  });
+  resultsBox.classList.remove('hidden');
+}
+ function currentFiltered() {
+   const q = searchInput.value.trim().toLowerCase();
+   if (!q) return [];
+   return GOODS
+     .filter(g => g.name.toLowerCase().includes(q))
+     .sort((a,b)=> a.name.localeCompare(b.name,'en'));
+ }
+ function addProduct(name) {
+  const qty = 1;
+  production.set(name, (production.get(name) || 0) + qty);
+  renderList(); updateNeeds(); updateTree();
+  searchInput.value = '';
+  resultsBox.classList.add('hidden');
+  searchInput.focus();
+}
+ // typing -> filter
+ searchInput.addEventListener('input', () => {
+   const items = currentFiltered();
+   showResults(items);
+ });
+ // Enter -> add first result
+ searchInput.addEventListener('keydown', (e) => {
+   if (e.key === 'Enter') {
+     const items = currentFiltered();
+     if (items.length) {
+       e.preventDefault();
+       addProduct(items[0].name);
+     }
+   }
+ });
+
+ // close results on outside click
+ document.addEventListener('click', (e) => {
+   if (!resultsBox.contains(e.target) && e.target !== searchInput) {
+     resultsBox.classList.add('hidden');
+   }
+ });
+ // wire other controls
+const applyAllQtyBtn=document.getElementById('applyAllQtyBtn');
+const setAllQtyInput=document.getElementById('setAllQty');
+const setAllMinus=document.getElementById('setAllMinus');
+const setAllPlus=document.getElementById('setAllPlus');
+const setAllMinus5=document.getElementById('setAllMinus5');
+const setAllPlus5=document.getElementById('setAllPlus5');
+if(applyAllQtyBtn){applyAllQtyBtn.addEventListener('click',()=>{
+ const n=parseInt(setAllQtyInput.value,10);
+ if(!n||n<=0)return;
+ for(const k of production.keys()) production.set(k,n);
+ renderList(); updateNeeds(); updateTree();
+});}
+if(setAllMinus){ setAllMinus.addEventListener('click',()=>{ const v=Math.max(1,(parseInt(setAllQtyInput.value||'1',10)-1)); setAllQtyInput.value=v; });}
+if(setAllPlus){ setAllPlus.addEventListener('click', ()=>{ const v=Math.max(1,(parseInt(setAllQtyInput.value||'1',10)+1)); setAllQtyInput.value=v; });}
+if(setAllMinus5){ setAllMinus5.addEventListener('click',()=>{ const v=Math.max(1,(parseInt(setAllQtyInput.value||'1',10)-5)); setAllQtyInput.value=v; });}
+if(setAllPlus5){ setAllPlus5.addEventListener('click', ()=>{ const v=Math.max(1,(parseInt(setAllQtyInput.value||'1',10)+5)); setAllQtyInput.value=v; });}
+recursiveChk.addEventListener('change', () => { updateNeeds(); updateTree(); });
+ resetBtn.addEventListener('click', () => { production.clear(); renderList(); updateNeeds(); updateTree(); });
+ // init
+ renderList(); updateNeeds(); updateTree();
+</script>
+<script>
+(function(){
+ function showToast(message){
+  try{
+   const t = document.createElement('div');
+   t.className = 'toast';
+   t.textContent = message;
+   document.body.appendChild(t);
+   setTimeout(()=>{ t.remove(); }, 1800);
+  }catch(e){ console.warn('toast fail', e); }
+ }
+ async function copyText(text){
+  if (!text) { showToast('Nothing to copy'); return false; }
+  try {
+   if (navigator.clipboard && window.isSecureContext) {
+     await navigator.clipboard.writeText(text);
+   } else {
+     const ta=document.createElement('textarea');
+     ta.value=text; ta.style.position='fixed'; ta.style.opacity='0';
+     document.body.appendChild(ta); ta.focus(); ta.select();
+     document.execCommand('copy'); ta.remove();
+   }
+   showToast('Copied to clipboard');
+   return true;
+  } catch(e){
+   console.error('copy failed', e);
+   alert('Copy failed. See console.');
+   return false;
+  }
+ }
+ function buildTotalsText(){
+  const rows=[...document.querySelectorAll('#needsBody tr')];
+  if(!rows.length) return '';
+  const lines=[];
+  for(const tr of rows){
+   const tds=tr.querySelectorAll('td');
+   if(tds.length>=2){
+    const name=(tds[0].textContent||'').trim();
+    const qty=(tds[1].textContent||'').trim();
+    if(name && qty) lines.push(`${name} x ${qty}`);
+   }
+  }
+  return lines.join('\n');
+ }
+ function buildTreeText(){
+  const root = document.getElementById('treeView');
+  if(!root) return '';
+  const list = root.querySelector(':scope > ul');
+  if(!list) return '';
+  const lines=[];
+  function walk(li, depth){
+   const row = li.querySelector(':scope > .node');
+   if(row){
+    const spans=[...row.querySelectorAll('span')];
+    let name='', qty='', src='';
+    if(spans[1]) name=spans[1].textContent.trim();
+    if(spans[2]) qty = spans[2].textContent.replace(/^×\s*/, 'x ').trim();
+    if(spans[3]) src = spans[3].textContent.replace(/^–\s*/, ' - ').trim();
+    const label=[name, qty, src].filter(Boolean).join(' ');
+    lines.push(' '.repeat(depth) + label);
+   }
+   const children = li.querySelector(':scope > ul');
+   if(children){ [...children.children].forEach(ch=>walk(ch, depth+1)); }
+  }
+  [...list.children].forEach(li=>walk(li,0));
+  return lines.join('\n');
+ }
+ function wireCopy(idBtn, idMsg, builder){
+  const btn = document.getElementById(idBtn);
+  const msg = document.getElementById(idMsg);
+  if(!btn) return;
+  btn.addEventListener('click', async (e)=>{
+   e.preventDefault();
+   const txt = builder();
+   const ok = await copyText(txt);
+   if(msg){
+    msg.textContent = ok ? 'Copied to clipboard' : (txt? 'Copy failed' : 'Nothing to copy');
+    setTimeout(()=> msg.textContent='', 1800);
+   }
+  });
+ }
+ if(document.readyState === 'loading'){
+  document.addEventListener('DOMContentLoaded', ()=>{
+   wireCopy('copyTotalsBtn','copyTotalsMsg', buildTotalsText);
+   wireCopy('copyTreeBtn','copyTreeMsg', buildTreeText);
+  });
+ } else {
+  wireCopy('copyTotalsBtn','copyTotalsMsg', buildTotalsText);
+  wireCopy('copyTreeBtn','copyTreeMsg', buildTreeText);
+ }
+})();
+</script>
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+<script>
+function downloadDataUrl(filename, dataUrl){
+ const a=document.createElement('a'); a.href=dataUrl; a.download=filename; a.click();
+}
+async function elementToImage(el, type='image/png', quality=0.92, scale=2){
+ const node = (typeof el==='string')? document.querySelector(el) : el;
+ if(!node) throw new Error('element not found');
+ const canvas = await html2canvas(node, {
+  backgroundColor: getComputedStyle(document.documentElement).getPropertyValue('--bg') || '#0f172a',
+  scale
+ });
+ return (type==='image/jpeg') ? canvas.toDataURL('image/jpeg', quality) : canvas.toDataURL('image/png');
+}
+function hideButtonsIn(container){
+ const btns = Array.from(container.querySelectorAll('button'));
+ btns.forEach(b => b.dataset._prevVisibility = b.style.visibility || '');
+ btns.forEach(b => b.style.visibility = 'hidden');
+ return () => btns.forEach(b => b.style.visibility = b.dataset._prevVisibility);
+}
+function wireImageDownload(btnId, node, type){
+ const btn=document.getElementById(btnId); if(!btn) return;
+ btn.addEventListener('click', async () => {
+  try{
+   const restore = hideButtonsIn(node);
+   const ts = new Date().toISOString().slice(0,19).replace(/[T:]/g,'-');
+   const dataUrl = await elementToImage(node, type, 0.92, 2);
+   restore();
+   const base = (node && (node.id==='needsBody' || node.querySelector?.('#needsBody'))) ? 'ingredients' : 'tree';
+   const ext = (type==='image/jpeg')? 'jpg' : 'png';
+   downloadDataUrl(`${base}_${ts}.${ext}`, dataUrl);
+  }catch(e){ console.error('image export failed', e); alert('Export failed. See console.'); }
+ });
+}
+(function(){
+ function ready(fn){ if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', fn); else fn(); }
+ ready(()=>{
+  const needsSection = document.querySelector('#needsBody')?.closest('section.card') || document.querySelector('#needsBody');
+  const treeSection = document.querySelector('#treeView')?.closest('section.card') || document.querySelector('#treeView');
+  wireImageDownload('downloadTotalsPngBtn', needsSection, 'image/png');
+  wireImageDownload('downloadTreePngBtn', treeSection, 'image/png');
+  wireImageDownload('downloadTreeJpgBtn', treeSection, 'image/jpeg');
+ });
+})();
+</script>
+
+<script>
+function exportPlan(){
+ const data=JSON.stringify(Object.fromEntries(production),null,2);
+ const blob=new Blob([data],{type:'application/json'});
+ const url=URL.createObjectURL(blob);
+ const a=document.createElement('a');a.href=url;a.download='hayday_plan.json';a.click();URL.revokeObjectURL(url);
+}
+function importPlan(file){
+ file.text().then(t=>{
+  if(!t.trim())return;
+  let obj;try{obj=JSON.parse(t);}catch(e){alert('Ungültiges JSON');return;}
+  if(typeof obj!=='object'||Array.isArray(obj)){alert('Falsches Format');return;}
+  production.clear();
+  for(const [n,q] of Object.entries(obj)){
+    const v=parseInt(q,10);
+    if(n&&Number.isFinite(v)&&v>0)production.set(n,v);
+  }
+  try{renderList();}catch(e){}
+  try{updateNeeds();}catch(e){}
+  try{updateTree();}catch(e){}
+ }).catch(e=>alert('Fehler beim Lesen'));
+}
+document.addEventListener('DOMContentLoaded',()=>{
+ const ex=document.getElementById('exportBtn');
+ const im=document.getElementById('importBtn2');
+ const fi=document.getElementById('importFile2');
+ if(ex)ex.onclick=exportPlan;
+ if(im)im.onclick=()=>fi && fi.click();
+ if(fi)fi.onchange=e=>{const f=e.target.files[0];if(f)importPlan(f);e.target.value='';};
+});
+</script>
+<script>
+// === Theme handling (default Light, selector works, no persistence) ===
+(function(){
+  const KEY = "hayday.theme";
+  function applyTheme(t){
+    document.documentElement.setAttribute("data-theme", t);
+  }
+  // Always default to lightPink on page load (ignore stored).
+  function loadTheme(){
+    return "lightPink";
+  }
+  // Disable saving so the choice is session-only.
+  function saveTheme(t){ /* no-op: we do not persist */ }
+  function initThemeUI(){
+    // Clear any previous persisted value once.
+    try { localStorage.removeItem(KEY); } catch(e){}
+    const sel = document.getElementById("themeSelect");
+    const t = loadTheme();
+    applyTheme(t);
+    if(sel){
+      sel.value = t;
+      sel.addEventListener("change", () => {
+        const v = sel.value;
+        applyTheme(v);
+        // Intentionally do not save to localStorage.
+      });
+    }
+  }
+  if(document.readyState === "loading"){
+    document.addEventListener("DOMContentLoaded", initThemeUI);
+  } else {
+    initThemeUI();
+  }
+})();
+</script>
+
+<script type='module'>
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js';
+import { getDatabase, ref, set, onValue, get } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js';
+
+const firebaseConfig={apiKey:'AIzaSyDDfZfLbKs-vYMN26MTLUlyISlQIxXxMlE',authDomain:'hayday-prodcalc.firebaseapp.com',databaseURL:'https://hayday-prodcalc-default-rtdb.europe-west1.firebasedatabase.app',projectId:'hayday-prodcalc',storageBucket:'hayday-prodcalc.firebasestorage.app',messagingSenderId:'985603067729',appId:'1:985603067729:web:06a5a770d91f82e70c8d70'};
+
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+
+function genId(){ const a=new Uint8Array(8); crypto.getRandomValues(a); return Array.from(a,x=>x.toString(16).padStart(2,'0')).join(''); }
+
+function getPlanId(){ const url=new URL(location.href); let id=url.searchParams.get('plan'); if(!id){ id=genId(); url.searchParams.set('plan',id); history.replaceState(null,'',url); } return id; }
+
+const PLAN_ID=getPlanId();
+const path = `plans/${PLAN_ID}/production`;
+
+let stop=false;
+
+function cloudSave(){ if(stop) return; set(ref(db,path), Object.fromEntries(production)); }
+
+function loadFrom(val){ stop=true; production.clear(); for(const k in val){ production.set(k, val[k]); } renderList(); updateNeeds(); updateTree(); stop=false; }
+
+onValue(ref(db,path), snap => { const v=snap.val(); if(v===null){ loadFrom({}); } else loadFrom(v); });
+
+const old = updateNeeds;
+updateNeeds = function(...args){ old.apply(this,args); cloudSave(); }
+
+document.getElementById('copyLinkBtn')?.addEventListener('click',()=>navigator.clipboard.writeText(location.href));
+document.getElementById('newPlanBtn')?.addEventListener('click',()=>{ const url=new URL(location.href); url.searchParams.set('plan',genId()); location.href=url; });
+</script>
+</body>
+</html>
